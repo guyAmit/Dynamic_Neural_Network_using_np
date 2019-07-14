@@ -61,45 +61,50 @@ class NeuralNet:
         return X_l, cache
 
     def backprop(self, batch, cache):
-        X_train, C_train = batch
-        net_out = cache['X' + str(self.layers_num)]
-        X_L_1 = cache['X' + str(self.layers_num - 1)]
-        last_layer = self.layers['L' + str(self.layers_num)]
-
+        X, Y = batch
+        m = X.shape[1]
         grads = {}
-        grads['dW' + str(self.layers_num)] = grad_W_cross_entropy(X_l_1=X_L_1, net_out=net_out, W_l=last_layer.W,
-                                                                  labels=C_train)
-        grads['db' + str(self.layers_num)] = grad_b_cross_entropy(net_out=net_out, labels=C_train)
-        grads['dX' + str(self.layers_num)] = grad_X_cross_entropy(X_l_1=X_L_1, W_l=last_layer.W, labels=C_train)
+        X_l = cache['X' + str(self.layers_num)]
+        X_l_1 = cache['X' + str(self.layers_num - 1)]
+        V_l = grad_cross_entropy(X_l, Y)
+        grads['dW' + str(self.layers_num)] = JacT_mV_W(V_l=V_l, X_l_1=X_l_1)
+        grads['db' + str(self.layers_num)] = JacT_mV_b(V_l=V_l)
 
-        for l in range(self.layers_num - 1, 0, -1):
+        for l in reversed(range(1, self.layers_num)):
+            layer_p_1 = self.layers['L' + str(l + 1)]
             layer_l = self.layers['L' + str(l)]
-            X_L_1 = cache['X' + str(l - 1)]
-            Z = cache['Z' + str(l)]
+            X_l = cache['X' + str(l)]
+            X_l_1 = cache['X' + str(l - 1)]
+            # ToDo : add dropout to W
+            V_l = layer_p_1.W.T.dot(V_l)
             if layer_l.activation == relu:
-                V = grad_relu(Z) * grads['dX' + str(l + 1)]
+                V_l = np.multiply(V_l, np.int64(X_l > 0))
             else:
-                V = grad_tanh(Z) * grads['dX' + str(l + 1)]
+                V_l = np.multiply(V_l, grad_tanh(X_l))
+            # ToDo : add L2 to W
+            dW = JacT_mV_W(V_l=V_l, X_l_1=X_l_1)
+            db = JacT_mV_b(V_l=V_l)
 
-            m = X_L_1.shape[1]
-            grads['dW' + str(l)] = (1 / m) * V.dot(X_L_1.T)
-            grads['db' + str(l)] = (1 / m) * np.sum(V, axis=1, keepdims=True)
-            grads['dX' + str(l)] = layer_l.W.T.dot(V)  # TODO:  check W.T page 68
-
+            assert dW.shape == layer_l.W.shape
+            assert db.shape == layer_l.b.shape
+            grads['dW' + str(l)] = dW
+            grads['db' + str(l)] = db
         return grads
 
+
     def update_params(self, grads, cache):
-        for l in range(1, self.layers_num):
+        for l in range(1, self.layers_num + 1):
             layer_l = self.layers['L' + str(l)]
             # parameters update rule
             dW = grads['dW' + str(l)]
             if layer_l.dropout < 1:
                 D_l = cache['D' + str(l)]
-                layer_l.W = layer_l.W - self.optimizer.step(layer_num=l, grad=dW * D_l, param='dW')
+                self.layers['L' + str(l)].W = layer_l.W - self.optimizer.step(layer_num=l, grad=dW * D_l, param='dW')
             else:
-                layer_l.W = layer_l.W - self.optimizer.step(layer_num=l, grad=dW, param='dW')
+                self.layers['L' + str(l)].W = layer_l.W - self.optimizer.step(layer_num=l, grad=dW, param='dW')
 
-            layer_l.b = layer_l.b - self.optimizer.step(layer_num=l, grad=grads['db' + str(l)], param='db')
+            self.layers['L' + str(l)].b = layer_l.b - self.optimizer.step(layer_num=l,
+                                                                          grad=grads['db' + str(l)], param='db')
         del grads
 
     def predict(self, X):
@@ -108,15 +113,13 @@ class NeuralNet:
         return predictions
 
     def compile(self, optimizer):
-        b = self.layers['L' + str(self.layers_num)].b
-        self.layers['L' + str(self.layers_num)].b = np.zeros(b.shape)
         self.optimizer = optimizer
 
-    def fit(self, X_train, C_train, X_val, C_val, epoch, batch_size):
+    def fit(self, X_train, C_train, X_val, C_val, epoch, batch_size, p=False):
         costs_train = []
-        errors_train = []
+        succs_train = []
         costs_val = []
-        errors_val = []
+        succs_val = []
         labels_train = np.argmax(C_train, axis=0).reshape((-1, 1))
         labels_val = np.argmax(C_val, axis=0).reshape((-1, 1))
         mini_batches = create_mini_batches(X_train=X_train, C_train=C_train, batch_size=batch_size)
@@ -126,18 +129,18 @@ class NeuralNet:
                 grads = self.backprop((batch_x, batch_c), cache)
                 self.update_params(grads, cache)
 
-            if itr % 10 == 0 or itr == epoch - 1:
+            if p and itr % 10 == 0 or itr == epoch - 1:
                 A_l, _ = self.feed_forward(X=X_train, predict=False)
                 cost_train = cross_entropy(A_l, C_train)
-                error_train = np.mean(self.predict(X=X_train) != labels_train)
+                succ_train = np.mean(self.predict(X=X_train) == labels_train)
                 net_out, _ = self.feed_forward(X_val, predict=False)
                 cost_val = cross_entropy(net_out, C_val)
-                error_val = np.mean(self.predict(X_val) != labels_val)
-                print('Train: error after {} iterations is {} and cost is {}'.format(itr, error_train, cost_train))
-                print('Val: error after {} iterations is {} and cost is {}'.format(itr, error_val, cost_val))
+                succ_val = np.mean(self.predict(X_val) == labels_val)
+                print('Train: succ after {} iterations is {} and cost is {}'.format(itr, succ_train, cost_train))
+                print('Val: succ after {} iterations is {} and cost is {}'.format(itr, succ_val, cost_val))
                 costs_val.append(cost_val)
-                errors_val.append(error_val)
+                succs_val.append(succ_val)
                 costs_train.append(cost_train)
-                errors_train.append(error_train)
+                succs_train.append(succ_train)
 
-        return costs_train, errors_train, costs_val, errors_val
+        return costs_train, succs_train, costs_val, succs_val

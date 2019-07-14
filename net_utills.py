@@ -2,36 +2,31 @@ import numpy as np
 
 
 def cross_entropy(net_out, labels):
-    return -np.mean(np.sum(np.log(net_out) * labels, axis=0), axis=0)
+    return -np.mean(np.sum(np.log(net_out) * labels, axis=0, keepdims=True), axis=1)
 
 
-def grad_W_cross_entropy(X_l_1, net_out, W_l, labels):
-    dW = np.zeros(W_l.shape)
-    for k in range(W_l.shape[0]):
-        dW[k, :] = np.mean(X_l_1 * (net_out[k, :] - labels[k, :]), axis=1).T
+def JacT_mV_W(V_l, X_l_1):
+    dW = V_l.dot(X_l_1.T)
     return dW
 
 
-def grad_b_cross_entropy(net_out, labels):
-    db = np.mean((net_out - labels), axis=1)
+def JacT_mV_b(V_l):
+    db = np.mean(V_l, axis=1, keepdims=True)
     return db
 
 
-def grad_X_cross_entropy(X_l_1, W_l, labels):
-    m = X_l_1.shape[1]
-    dX = (-1 / m) * W_l.T.dot(np.exp(W_l.dot(X_l_1)) / np.sum(np.exp(W_l.dot(X_l_1)), axis=0) - labels)
+def grad_cross_entropy(net_out, labels):
+    dX = net_out - labels
     return dX
 
 
-def grad_relu(liner_part):
-    Z = np.array(liner_part, copy=True)
-    Z[liner_part <= 0] = 0
-    Z[liner_part > 0] = 1
-    return Z
+def grad_relu(X):
+    grad = X > 0
+    return np.int64(grad)
 
 
 def grad_tanh(linear_part):
-    return 1 - np.tanh(linear_part)**2
+    return 1 - np.tanh(linear_part) ** 2
 
 
 def relu(v):
