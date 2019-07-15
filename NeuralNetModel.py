@@ -10,7 +10,7 @@ class layer:
     activation = None
     l2_regulaizer = 0
 
-    def __init__(self, size, dropout=1, activation=relu, l2_regulaizer=0.1):
+    def __init__(self, size, activation, dropout=1, l2_regulaizer=0.1):
         self.activation = activation
         self.W = (1 / size[1]) * np.random.randn(*size)
         self.b = (1 / size[0]) * np.random.randn(size[0], 1)
@@ -19,9 +19,8 @@ class layer:
 
     def get_reg_term(self):
         if self.l2_regulaizer != 0:
-            return self.l2_regulaizer * np.sum(self.W * self.W, axis=-1)
-        else:
-            return ValueError('No regularization on this layer')
+            return self.l2_regulaizer * np.sum(self.W * self.W)
+        return 0
 
 
 class NeuralNet:
@@ -33,12 +32,12 @@ class NeuralNet:
         self.layers = {}
         self.optimizer = None
 
-    def add_layer(self, units, activation, dropout, l2_regulaizer):
+    def add_layer(self, units, activation, dropout=1, l2_regulaizer=0):
         self.layers_dims.append(units)
         size = (units, self.layers_dims[self.layers_num])
         self.layers_num += 1
         self.layers['L' + str(self.layers_num)] = \
-            layer(size=size, dropout=dropout, activation=activation,
+            layer(size=size, activation=activation, dropout=dropout,
                   l2_regulaizer=l2_regulaizer)
 
     def feed_forward(self, X, predict=False):
@@ -47,15 +46,14 @@ class NeuralNet:
         X_l = X
         for l in range(1, self.layers_num + 1):
             layer_l = self.layers['L' + str(l)]
-            Z = layer_l.W
-            if not predict:
-                if layer_l.dropout < 1:
-                    D_l = np.random.rand(*layer_l.W.shape) > layer.dropout
-                    Z = Z * D_l
-                    cache['D' + str(l)] = D_l
-            Z = Z.dot(X_l) + layer_l.b
+            Z = layer_l.W.dot(X_l) + layer_l.b
             X_l = layer_l.activation(Z)
             if not predict:
+                if layer_l.dropout < 1:
+                    D_l = np.random.rand(*X_l.shape) < layer.dropout
+                    X_l = np.multiply(X_l, D_l)
+                    X_l /= layer_l.dropout
+                    cache['D' + str(l)] = D_l
                 cache['X' + str(l)] = X_l
                 cache['Z' + str(l)] = Z
         return X_l, cache
@@ -67,6 +65,12 @@ class NeuralNet:
         X_l = cache['X' + str(self.layers_num)]
         X_l_1 = cache['X' + str(self.layers_num - 1)]
         V_l = grad_cross_entropy(X_l, Y)
+
+        # apply dropout derivative
+        if self.layers['L' + str(self.layers_num)].dropout < 1:
+            V_l = np.multiply(V_l, cache['D' + str(self.layers_num)])
+            V_l /= self.layers['L' + str(self.layers_num)].dropout
+
         grads['dW' + str(self.layers_num)] = JacT_mV_W(V_l=V_l, X_l_1=X_l_1)
         grads['db' + str(self.layers_num)] = JacT_mV_b(V_l=V_l)
 
@@ -75,14 +79,22 @@ class NeuralNet:
             layer_l = self.layers['L' + str(l)]
             X_l = cache['X' + str(l)]
             X_l_1 = cache['X' + str(l - 1)]
-            # ToDo : add dropout to W
             V_l = layer_p_1.W.T.dot(V_l)
+
+            # apply dropout derivative
+            if self.layers['L' + str(l)].dropout < 1:
+                V_l = np.multiply(V_l, cache['D' + str(l)])
+                V_l /= self.layers['L' + str(l)].dropout
+
             if layer_l.activation == relu:
                 V_l = np.multiply(V_l, np.int64(X_l > 0))
             else:
                 V_l = np.multiply(V_l, grad_tanh(X_l))
-            # ToDo : add L2 to W
+
             dW = JacT_mV_W(V_l=V_l, X_l_1=X_l_1)
+            # apply L2 reg
+            if layer_l.l2_regulaizer != 0:
+                dW += (1 / m) * layer_l.l2_regulaizer * layer_l.W
             db = JacT_mV_b(V_l=V_l)
 
             assert dW.shape == layer_l.W.shape
@@ -91,17 +103,12 @@ class NeuralNet:
             grads['db' + str(l)] = db
         return grads
 
-
     def update_params(self, grads, cache):
         for l in range(1, self.layers_num + 1):
             layer_l = self.layers['L' + str(l)]
             # parameters update rule
-            dW = grads['dW' + str(l)]
-            if layer_l.dropout < 1:
-                D_l = cache['D' + str(l)]
-                self.layers['L' + str(l)].W = layer_l.W - self.optimizer.step(layer_num=l, grad=dW * D_l, param='dW')
-            else:
-                self.layers['L' + str(l)].W = layer_l.W - self.optimizer.step(layer_num=l, grad=dW, param='dW')
+            self.layers['L' + str(l)].W = layer_l.W - self.optimizer.step(layer_num=l, grad=grads['dW' + str(l)],
+                                                                          param='dW')
 
             self.layers['L' + str(l)].b = layer_l.b - self.optimizer.step(layer_num=l,
                                                                           grad=grads['db' + str(l)], param='db')
@@ -129,12 +136,12 @@ class NeuralNet:
                 grads = self.backprop((batch_x, batch_c), cache)
                 self.update_params(grads, cache)
 
-            if p and itr % 10 == 0 or itr == epoch - 1:
+            if p and (itr % 10 == 0 or itr == epoch - 1):
                 A_l, _ = self.feed_forward(X=X_train, predict=False)
-                cost_train = cross_entropy(A_l, C_train)
+                cost_train = cross_entropy(self, A_l, C_train)
                 succ_train = np.mean(self.predict(X=X_train) == labels_train)
                 net_out, _ = self.feed_forward(X_val, predict=False)
-                cost_val = cross_entropy(net_out, C_val)
+                cost_val = cross_entropy(self, net_out, C_val)
                 succ_val = np.mean(self.predict(X_val) == labels_val)
                 print('Train: succ after {} iterations is {} and cost is {}'.format(itr, succ_train, cost_train))
                 print('Val: succ after {} iterations is {} and cost is {}'.format(itr, succ_val, cost_val))

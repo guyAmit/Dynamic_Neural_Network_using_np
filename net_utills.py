@@ -1,8 +1,16 @@
 import numpy as np
 
 
-def cross_entropy(net_out, labels):
-    return -np.mean(np.sum(np.log(net_out) * labels, axis=0, keepdims=True), axis=1)
+def cross_entropy(net, net_out, labels):
+    m = net_out.shape[1]
+    # log(x+a) is approximately log(x)+a by taylor
+    log_trick = np.abs(np.max(net_out, axis=0))
+    ce = -np.mean(np.sum(np.log(net_out + log_trick) * labels, axis=0, keepdims=True) - log_trick, axis=1)
+    reg_term = 0
+    for l in net.layers.values():
+        reg_term += l.get_reg_term()
+    reg_term /= (2*m)
+    return ce + reg_term
 
 
 def JacT_mV_W(V_l, X_l_1):
@@ -38,7 +46,8 @@ def tanh(v):
 
 
 def softmax(v):
-    return np.exp(v) / np.sum(np.exp(v), axis=0)
+    eta = np.max(v, axis=0)
+    return np.exp(v - eta) / np.sum(np.exp(v - eta), axis=0)
 
 
 def create_mini_batches(X_train, C_train, batch_size):
