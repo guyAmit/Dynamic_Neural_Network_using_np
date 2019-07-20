@@ -17,7 +17,7 @@ class optimizer:
         if Type == 'Adam':
             self.beta1 = 0.9
             self.beta2 = 0.99
-            self.epsilon = 1e-8
+            self.epsilon = 1e-6
             self.V = {}
             self.S = {}
             self.t = 0

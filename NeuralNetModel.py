@@ -1,6 +1,11 @@
 import numpy as np
 from optimizers import optimizer
 from net_utills import *
+import matplotlib.pyplot as plt
+import copy
+import seaborn as sns
+
+sns.set_style('darkgrid')
 
 
 class layer:
@@ -77,7 +82,7 @@ class NeuralNet:
         for l in reversed(range(1, self.layers_num)):
             layer_p_1 = self.layers['L' + str(l + 1)]
             layer_l = self.layers['L' + str(l)]
-            X_l = cache['X' + str(l)]
+            Z_l = cache['Z' + str(l)]
             X_l_1 = cache['X' + str(l - 1)]
             V_l = layer_p_1.W.T.dot(V_l)
 
@@ -87,20 +92,23 @@ class NeuralNet:
                 V_l /= self.layers['L' + str(l)].dropout
 
             if layer_l.activation == relu:
-                V_l = np.multiply(V_l, np.int64(X_l > 0))
+                V_l = np.multiply(V_l, np.int64(Z_l > 0))
             else:
-                V_l = np.multiply(V_l, grad_tanh(X_l))
+                V_l = np.multiply(V_l, grad_tanh(Z_l))
 
             dW = JacT_mV_W(V_l=V_l, X_l_1=X_l_1)
             # apply L2 reg
             if layer_l.l2_regulaizer != 0:
-                dW += (1 / m) * layer_l.l2_regulaizer * layer_l.W
+                dW += (2 / m) * layer_l.l2_regulaizer * layer_l.W
             db = JacT_mV_b(V_l=V_l)
 
             assert dW.shape == layer_l.W.shape
             assert db.shape == layer_l.b.shape
             grads['dW' + str(l)] = dW
             grads['db' + str(l)] = db
+
+        grads['dX0'] = self.layers['L1'].W.T.dot(V_l)
+
         return grads
 
     def update_params(self, grads, cache):
@@ -151,3 +159,103 @@ class NeuralNet:
                 succs_train.append(succ_train)
 
         return costs_train, succs_train, costs_val, succs_val
+
+    def gradient_test_theta(self, X, C, d, epsilon, max_iter):
+        net_out, cache = self.feed_forward(X, predict=False)
+        f_x = cross_entropy(self, net_out, labels=C)
+        grads = self.backprop((X, C), cache)
+
+        epsilons = [epsilon ** i for i in range(1, max_iter + 1)]
+        tests = np.zeros((max_iter, 2))
+        layers = {}
+        for l in range(1, self.layers_num + 1):
+            L = layer(size=(self.layers_dims[l], self.layers_dims[l - 1]), activation=tanh)
+            L.W = self.layers['L' + str(l)].W.copy()
+            L.b = self.layers['L' + str(l)].b.copy()
+            layers['L' + str(l)] = L
+
+        for i in range(0, max_iter):
+
+            for l in range(1, self.layers_num+1):
+                self.layers['L' + str(l)].W += d['W' + str(l)] * epsilons[i]
+                self.layers['L' + str(l)].b += d['b' + str(l)] * epsilons[i]
+
+            net_out, cache = self.feed_forward(X, predict=False)
+            f_x_p_d = cross_entropy(self, net_out, labels=C)
+
+            for l in range(1, self.layers_num+1):
+                self.layers['L' + str(l)].W = layers['L' + str(l)].W.copy()
+                self.layers['L' + str(l)].b = layers['L' + str(l)].b.copy()
+
+
+            f_x_p_g = f_x.copy()
+            for l in range(1, self.layers_num+1):
+                f_x_p_g += np.dot((epsilons[i] * d['W' + str(l)]).reshape((-1, 1)).T,
+                                  grads['dW' + str(l)].reshape((-1, 1))).reshape((1,))
+                f_x_p_g += (epsilons[i] * d['b' + str(l)]).T.dot(grads['db' + str(l)]).reshape((1,))
+
+            tests[i, 0] = np.abs(f_x_p_d - f_x)
+            tests[i, 1] = np.abs(f_x_p_d - f_x_p_g)
+
+        plt.semilogy(range(1, max_iter + 1), tests[:, 1], 'b')
+        plt.title('Gradient Test - Theta')
+        plt.legend(['quadratic result'])
+        plt.xlabel('iterations')
+        plt.ylabel('results')
+        plt.savefig('task6/Theta quadratic result.png')
+        plt.show()
+
+        plt.semilogy(range(1, max_iter + 1), tests[:, 0], 'r')
+        plt.title('Gradient Test - Theta')
+        plt.legend(['linear result'])
+        plt.xlabel('iterations')
+        plt.ylabel('results')
+        plt.savefig('task6/Theta linear result.png')
+        plt.show()
+
+        plt.semilogy(range(1, max_iter + 1), tests[:, 1], 'b')
+        plt.semilogy(range(1, max_iter + 1), tests[:, 0], 'r')
+        plt.title('Gradient Test - Theta')
+        plt.legend(['quadratic result', 'linear result'])
+        plt.xlabel('iterations')
+        plt.ylabel('results')
+        plt.savefig('task6/Theta quadratic result linear result.png')
+        plt.show()
+
+    def gradient_test_X(self, X, C, d, epsilon, max_iter):
+        net_out, cache = self.feed_forward(X, predict=False)
+        f_x = cross_entropy(self, net_out, labels=C)
+        grads = self.backprop((X, C), cache)
+
+        epsilons = [epsilon ** i for i in range(1, max_iter + 1)]
+        tests = np.zeros((max_iter, 2))
+        for i in range(0, max_iter):
+            f_x_d = cross_entropy(self, self.feed_forward(X + epsilons[i] * d, predict=False)[0], labels=C)
+            f_x_d_g = f_x + np.dot((epsilons[i] * d).T, grads['dX0'])
+            tests[i, 0] = np.abs(f_x_d - f_x)
+            tests[i, 1] = np.abs(f_x_d - f_x_d_g)
+
+        plt.semilogy(range(1, max_iter + 1), tests[:, 1], 'b')
+        plt.title('Gradient Test - X')
+        plt.legend(['quadratic result'])
+        plt.xlabel('iterations')
+        plt.ylabel('results')
+        plt.savefig('task6/X quadratic result.png')
+        plt.show()
+
+        plt.semilogy(range(1, max_iter + 1), tests[:, 0], 'r')
+        plt.title('Gradient Test - X')
+        plt.legend(['linear result'])
+        plt.xlabel('iterations')
+        plt.ylabel('results')
+        plt.savefig('task6/X linear result.png')
+        plt.show()
+
+        plt.semilogy(range(1, max_iter + 1), tests[:, 1], 'b')
+        plt.semilogy(range(1, max_iter + 1), tests[:, 0], 'r')
+        plt.title('Gradient Test- X')
+        plt.legend(['quadratic result', 'linear result'])
+        plt.xlabel('iterations')
+        plt.ylabel('results')
+        plt.savefig('task6/X quadratic result linear result.png')
+        plt.show()
