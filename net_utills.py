@@ -5,8 +5,9 @@ def cross_entropy(net, net_out, labels):
     m = net_out.shape[1]
     # log(x+a) is approximately log(x)+a by taylor
     log_trick = np.abs(np.max(net_out, axis=0))
-    log_trick = 0
-    ce = -np.mean(np.sum(np.log(net_out + log_trick) * labels, axis=0, keepdims=True) - log_trick, axis=1)
+    # log_trick = 0 # disable log sum exp trick
+    ce = -np.mean(np.sum(np.log(net_out + log_trick) * labels,
+                         axis=0, keepdims=True) - log_trick, axis=1)
     reg_term = 0
     for l in net.layers.values():
         reg_term += l.get_reg_term()
