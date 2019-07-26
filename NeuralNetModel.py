@@ -144,7 +144,7 @@ class NeuralNet:
                 grads = self.backprop((batch_x, batch_c), cache)
                 self.update_params(grads, cache)
 
-            if p and (itr % 10 == 0 or itr == epoch - 1):
+            if p and (itr % 1 == 0 or itr == epoch - 1):
                 A_l, _ = self.feed_forward(X=X_train, predict=False)
                 cost_train = cross_entropy(self, A_l, C_train)
                 succ_train = np.mean(self.predict(X=X_train) == labels_train)
