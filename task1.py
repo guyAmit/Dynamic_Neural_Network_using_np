@@ -2,18 +2,16 @@ import numpy as np
 from scipy.io import loadmat
 import softmax
 
-
-
 # task 1
 if __name__ == '__main__':
     soft_reg = softmax.softmax_reg(class_num=2, input_size=2)
-    x = np.random.randn(2, 1)
+    x = (1 / 4) * np.random.randn(2, 1)
     c = np.array([0, 1]).reshape((2, 1))
 
-    d_x = np.random.randn(x.shape[0], 1)
-    soft_reg.gradient_X_test(d=d_x, X=x, C=c, epsilon=0.8, max_iter=10)
+    d_x = (1 / 4) * np.random.randn(x.shape[0], 1)
+    soft_reg.gradient_X_test(d=d_x, X=x, C=c, epsilon=0.5, max_iter=10)
 
-    d_w = np.random.randn(*soft_reg.W.shape)
+    d_w = (1 / 4) * np.random.randn(*soft_reg.W.shape)
     soft_reg.gradient_W_test(d=d_w, X=x, C=c, epsilon=0.8, max_iter=10)
     #
     # costs_train, errors_train, costs_val, errors_val = soft_reg.fit(X_train=X_train, C_train=C_train, X_val=X_val,

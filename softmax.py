@@ -11,7 +11,7 @@ class softmax_reg:
         self.W = (1 / input_size) * np.random.randn(input_size, class_num)
 
     def softmax(self, v):
-        return np.exp(v) / np.sum(np.exp(v), axis=1).reshape((-1, 1))
+        return np.exp(v) / np.sum(np.exp(v), keepdims=True, axis=1)
 
     def net_forward(self, X):
         return self.softmax(X.T.dot(self.W))
@@ -24,7 +24,6 @@ class softmax_reg:
         return (-1 / m) * np.sum(np.sum(np.log(net_out) * labels.T, axis=1, keepdims=True), axis=0)
 
     def grad_W_cross_entropy(self, X, net_out, labels):
-        m = net_out.shape[1]
         dW = np.zeros(self.W.shape)
         for k in range(self.W.shape[1]):
             dW[:, k] = np.mean(X * (net_out[:, k] - labels.T[:, k]).T, axis=1)
@@ -32,7 +31,8 @@ class softmax_reg:
 
     def grad_X_cross_entropy(self, X, labels):
         m = X.shape[1]
-        dX = (-1 / m) * self.W.dot(np.exp(self.W.T.dot(X)) / np.sum(np.exp(self.W.T.dot(X))) - labels)
+        _sum = np.sum(np.exp(self.W.T.dot(X)))
+        dX = (1 / m) * self.W.dot(np.exp(self.W.T.dot(X)) / _sum - labels)
         return dX
 
     # Task 1
@@ -55,7 +55,7 @@ class softmax_reg:
         plt.legend(['quadratic result'])
         plt.xlabel('iterations')
         plt.ylabel('results')
-        plt.savefig('imgs/softmax/W quadratic result.png')
+        # plt.savefig('imgs/softmax/W quadratic result.png')
         plt.show()
 
         plt.semilogy(range(1, max_iter + 1), tests[:, 0], 'r')
@@ -63,7 +63,7 @@ class softmax_reg:
         plt.legend(['linear result'])
         plt.xlabel('iterations')
         plt.ylabel('results')
-        plt.savefig('imgs/softmax/W linear result.png')
+        # plt.savefig('imgs/softmax/W linear result.png')
         plt.show()
 
         plt.semilogy(range(1, max_iter + 1), tests[:, 1], 'b')
@@ -72,12 +72,13 @@ class softmax_reg:
         plt.legend(['quadratic result', 'linear result'])
         plt.xlabel('iterations')
         plt.ylabel('results')
-        plt.savefig('imgs/softmax/W quadratic result linear result.png')
+        # plt.savefig('imgs/softmax/W quadratic result linear result.png')
         plt.show()
 
     # Task 1
     def gradient_X_test(self, d, X, C, epsilon, max_iter):
-        f_x = self.cross_entropy(self.net_forward(X), C)
+        net_out = self.net_forward(X)
+        f_x = self.cross_entropy(net_out, C)
         epsilons = [epsilon ** i for i in range(1, max_iter + 1)]
         tests = np.zeros((max_iter, 2))
         for i in range(0, max_iter):
@@ -91,7 +92,7 @@ class softmax_reg:
         plt.legend(['quadratic result'])
         plt.xlabel('iterations')
         plt.ylabel('results')
-        plt.savefig('imgs/softmax/X quadratic result.png')
+        # plt.savefig('imgs/softmax/X quadratic result.png')
         plt.show()
 
         plt.semilogy(range(1, max_iter + 1), tests[:, 0], 'r')
@@ -99,7 +100,7 @@ class softmax_reg:
         plt.legend(['linear result'])
         plt.xlabel('iterations')
         plt.ylabel('results')
-        plt.savefig('imgs/softmax/X linear result.png')
+        # plt.savefig('imgs/softmax/X linear result.png')
         plt.show()
 
         plt.semilogy(range(1, max_iter + 1), tests[:, 1], 'b')
@@ -108,7 +109,7 @@ class softmax_reg:
         plt.legend(['quadratic result', 'linear result'])
         plt.xlabel('iterations')
         plt.ylabel('results')
-        plt.savefig('imgs/softmax/X quadratic result linear result.png')
+        # plt.savefig('imgs/softmax/X quadratic result linear result.png')
         plt.show()
 
     # Task 2_3
